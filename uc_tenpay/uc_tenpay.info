@@ -1,0 +1,17 @@
+; $Id$
+name = tenpay
+description = 使用财付通来处理支付.
+dependencies[] = uc_payment
+package = Ubercart - payment
+core = 7.x
+php = 5.2
+
+
+
+
+; Information added by drupal.org packaging script on 2012-06-27
+version = "7.x-1.0-beta1"
+core = "7.x"
+project = "uc_tenpay"
+datestamp = "1340775135"
+

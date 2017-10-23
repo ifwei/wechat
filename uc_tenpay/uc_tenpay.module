@@ -1,0 +1,247 @@
+<?php
+// $Id$
+
+/**
+ * @file
+ * 集成QQ财付通的支付服务.
+ * zhupou.cn制作
+ */
+
+
+/**
+ * 实现钩子hook_menu().
+ */
+function uc_tenpay_menu() {
+  $items['tenpay/show'] = array(
+    'title' => 'Order complete',
+    'page callback' => 'uc_tenpay_show',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+    'file' => 'uc_tenpay.pages.inc',
+  );
+  $items['tenpay/return'] = array(
+    'title' => 'Order complete',
+    'page callback' => 'uc_tenpay_return',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+    'file' => 'uc_tenpay.pages.inc',
+  );
+
+  return $items;
+}
+
+/**
+ * 实现钩子 hook_form_alter().
+ */
+function uc_tenpay_form_alter(&$form, &$form_state, $form_id) {
+  if ($form_id == 'uc_cart_checkout_review_form' && ($order_id = intval($_SESSION['cart_order'])) > 0) {
+    $order = uc_order_load($order_id);
+
+    if (substr($order->payment_method,0,6) == 'tenpay') {
+      unset($form['submit']);
+	  $checkout = drupal_get_form('uc_tenpay_form', $order);
+      $form['#prefix'] = '<table style="display: inline; padding-top: 1em;"><tr><td>';
+      $form['#suffix'] = '</td><td>'.drupal_render($checkout) .'</td></tr></table>';
+    }
+  }
+}
+
+function uc_tenpay_form($form_state, $order) {
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => variable_get('uc_tenpay_checkout_button', t('Submit Order')),
+  );
+
+  return $form;
+}
+
+/**
+ * Implementation of hook_payment_method().
+ */
+function uc_tenpay_uc_payment_method() {
+  $path = base_path() . drupal_get_path('module', 'uc_tenpay');
+  $title = variable_get('uc_tenpay_method_title', t('腾讯财付通(即时结算)'));
+  $title_0 = '<img src="'. $path .'/images/0.gif" style="position: relative; left: 0.5em;">';
+  $methods[] = array(
+    'id' => 'tenpay',
+    'name' => t('财付通(即时结算)'),
+    'title' => $title_0,
+    //'review' => variable_get('uc_tenpay_check', FALSE) ? t('实物担保结算') : t('即时结算'),
+    'review' => $title_0,
+    'desc' => t('将页面重定向到财付通网站的收银台，使用财付通提供的支付服务付款.'),
+    'callback' => 'uc_tenpay_method_tenpay',
+    'weight' => 3,
+    'checkout' => TRUE,
+    'no_gateway' => TRUE,
+  );
+	/*
+	$methods[] = array(
+    'id' => 'tenpay_1002',
+    'name' => t('中国工商银行(财付通)'),
+    'title' => $title_1002,
+    //'review' => variable_get('uc_tenpay_check', FALSE) ? t('实物担保结算') : t('即时结算'),
+    'review' => $title_1002,
+    'desc' => t('将页面重定向到财付通网站的收银台，使用财付通提供的支付服务付款.'),
+    'callback' => 'uc_tenpay_method_tenpay_bank',
+    'weight' => 3,
+    'checkout' => TRUE,
+    'no_gateway' => TRUE,
+  );
+	$methods[] = array(
+    'id' => 'tenpay_1003',
+    'name' => t('中国建设银行(财付通)'),
+    'title' => $title_1003,
+    //'review' => variable_get('uc_tenpay_check', FALSE) ? t('实物担保结算') : t('即时结算'),
+    'review' => $title_1003,
+    'desc' => t('将页面重定向到财付通网站的收银台，使用财付通提供的支付服务付款.'),
+    'callback' => 'uc_tenpay_method_tenpay_bank',
+    'weight' => 3,
+    'checkout' => TRUE,
+    'no_gateway' => TRUE,
+  );
+	$methods[] = array(
+    'id' => 'tenpay_1005',
+    'name' => t('中国农业银行(财付通)'),
+    'title' => $title_1005,
+    //'review' => variable_get('uc_tenpay_check', FALSE) ? t('实物担保结算') : t('即时结算'),
+    'review' => $title_1005,
+    'desc' => t('将页面重定向到财付通网站的收银台，使用财付通提供的支付服务付款.'),
+    'callback' => 'uc_tenpay_method_tenpay_bank',
+    'weight' => 3,
+    'checkout' => TRUE,
+    'no_gateway' => TRUE,
+  );
+	$methods[] = array(
+    'id' => 'tenpay_1052',
+    'name' => t('中国银行(财付通)'),
+    'title' => $title_1052,
+    //'review' => variable_get('uc_tenpay_check', FALSE) ? t('实物担保结算') : t('即时结算'),
+    'review' => $title_1052,
+    'desc' => t('将页面重定向到财付通网站的收银台，使用财付通提供的支付服务付款.'),
+    'callback' => 'uc_tenpay_method_tenpay_bank',
+    'weight' => 3,
+    'checkout' => TRUE,
+    'no_gateway' => TRUE,
+  );
+	*/
+
+  return $methods;
+}
+
+
+// Adds tenpay settings to the payment method settings form.
+function uc_tenpay_method_tenpay($op, &$arg1) {
+  switch ($op) {
+    case 'cart-details':
+      return ;
+
+    case 'cart-process':
+      $_SESSION['pay_method'] = isset($_POST['pay_method'])?$_POST['pay_method']:'tenpay';
+      return;
+
+    case 'settings':
+      $form['uc_tenpay_bargainor_id'] = array(
+        '#type' => 'textfield',
+        '#title' => t('商户号'),
+        '#description' => t('你的财付通商家服务中的商户号.'),
+        '#default_value' => variable_get('uc_tenpay_bargainor_id', '1900000109'),
+        '#size' => 16,
+      );
+      $form['uc_tenpay_key'] = array(
+        '#type' => 'textfield',
+        '#title' => t('密钥'),
+        '#description' => t('你的财付通商家服务中的密钥.'),
+        '#default_value' => variable_get('uc_tenpay_key', '8934e7d15453e97507ef794cf7b0519d'),
+        '#size' => 16,
+      );
+     
+      $form['uc_tenpay_subject'] = array(
+        '#type' => 'textfield',
+        '#title' => t('通用的商品名称'),
+        '#default_value' => variable_get('uc_tenpay_subject', t('商品名称')),
+      );
+       $form['uc_tenpay_body'] = array(
+        '#type' => 'textfield',
+        '#title' => t('通用的商品描述'),
+        '#default_value' => variable_get('uc_tenpay_body', t('商品描述')),
+      );
+    
+      $form['uc_tenpay_method_title'] = array(
+        '#type' => 'textfield',
+        '#title' => t('支付方法标题'),
+        '#default_value' => variable_get('uc_tenpay_method_title', t('使用财付通提供的支付服务付款:')),
+      );
+     
+      $form['uc_tenpay_checkout_button'] = array(
+        '#type' => 'textfield',
+        '#title' => t('订单检查页面提交按钮文本'),
+        '#description' => t('为订单检查页面的提交按钮提供特定于财付通的文本.'),
+        '#default_value' => variable_get('uc_tenpay_checkout_button', t('提交订单')),
+      );
+     
+      return $form;
+  }
+}
+
+
+function uc_tenpay_form_submit($form_state, $order) {
+   if (($order_id = intval($_SESSION['cart_order'])) > 0) {
+    	$order = uc_order_load($order_id);
+			
+			if($order->payment_method =="tenpay"){
+				$bank_type = "0";
+			}else{
+				$bank_type = substr($order->payment_method,7);
+			} 
+    	$base_path = 'http://'.$_SERVER['HTTP_HOST'].base_path();
+    	
+			
+			module_load_include('inc', 'uc_tenpay', 'classes/PayRequestHandler.class');
+			
+			$strDate = date("Ymd");
+			$strTime = date("His");
+			//4位随机数
+			$randNum = rand(1000, 9999);
+			//10位序列号,可以自行调整。
+			$strReq = $strTime . $randNum;
+			/* 财付通交易单号，规则为：10位商户号+8位时间（YYYYmmdd)+10位流水号 */
+			
+			
+			$key =variable_get('uc_tenpay_key', '8934e7d15453e97507ef794cf7b0519d');
+			$bargainor_id = variable_get('uc_tenpay_bargainor_id', '1900000109');
+			$sp_billno = $order_id;
+			//$transaction_id = "";
+			$transaction_id = $bargainor_id . $strDate . $strReq;
+			$total_fee = ceil($order->order_total*100);
+			$return_url = $base_path."tenpay/return";
+			$desc = variable_get('uc_tenpay_body', t('商品描述'));
+			
+			
+			/* 创建支付请求对象 */
+			
+			$reqHandler = new PayRequestHandler();
+			$reqHandler->init();
+			$reqHandler->setKey($key);
+      
+			//----------------------------------------
+			//设置支付参数
+			//----------------------------------------
+			$reqHandler->setParameter("bargainor_id", $bargainor_id);			//商户号
+			$reqHandler->setParameter("sp_billno", $sp_billno);					//商户订单号
+			$reqHandler->setParameter("transaction_id", $transaction_id);		//财付通交易单号
+			$reqHandler->setParameter("total_fee", $total_fee);					//商品总金额,以分为单位
+			$reqHandler->setParameter("return_url", $return_url);				//返回处理地址
+			$reqHandler->setParameter("desc", $desc);	//商品名称
+			$reqHandler->setParameter("cs", "utf-8");	//字符编码
+			$reqHandler->setParameter("bank_type", $bank_type);	//字符编码
+
+			//用户ip,测试环境时不要加这个ip参数，正式环境再加此参数
+			$reqHandler->setParameter("spbill_create_ip", $_SERVER['REMOTE_ADDR']);
+
+			//请求的URL
+			$reqUrl = $reqHandler->getRequestURL();
+			
+
+   }
+   drupal_goto($reqUrl);
+}
